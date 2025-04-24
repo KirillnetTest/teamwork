@@ -42,7 +42,7 @@ def create_database_structure():
         first_name VARCHAR(255) NOT NULL,
         last_name VARCHAR(255) NOT NULL,
         city VARCHAR(255) NOT NULL,
-        age VARCHAR(255) NOT NULL,
+        age INT NOT NULL,
         sex INT NOT NULL
     );
     ''')
@@ -56,9 +56,6 @@ def create_database_structure():
         city VARCHAR(255) NOT NULL,
         age INT NOT NULL,
         sex INT NOT NULL,
-        photo1 VARCHAR,
-        photo2 VARCHAR,
-        photo3 VARCHAR,
         last_updated VARCHAR
     );
     ''')
@@ -96,14 +93,14 @@ def user_insert(vk_id: int, first_name: str, last_name: str, city: str, age: int
 
 #функция добавления нового подходящего пользователя из поиска в таблицу SearchUser
 def searchUser_insert(vk_id: int, first_name: str, last_name: str, city: str, age: int,
-                      sex: int, photo1: str, photo2: str, photo3: str):
+                      sex: int):
     conn = get_db_connection()
     cursor = conn.cursor()
     now_time = str(datetime.now())
     cursor.execute('''
-    INSERT INTO SearchUser (vk_id, first_name, last_name, city, age, sex, photo1, photo2, photo3, last_updated) 
-    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING vk_id;
-    ''', (vk_id, first_name, last_name, city, age, sex, photo1, photo2, photo3, now_time))
+    INSERT INTO SearchUser (vk_id, first_name, last_name, city, age, sex, last_updated) 
+    VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING vk_id;
+    ''', (vk_id, first_name, last_name, city, age, sex, now_time))
 
     serachUser_vk_id = cursor.fetchone()[0]
     conn.commit()
