@@ -145,3 +145,35 @@ def get_info_favorite(vk_id_user: int):
     conn.close()
 
     return new_list
+
+# функция удаления избранного кандидата для пользователя из таблицы Favorites
+def delete_favorite(favorite_vk_id:int, user_vk_id: int):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+    DELETE FROM favorites 
+    WHERE searchUserId = %s AND userId = %s;
+    ''', (favorite_vk_id, user_vk_id,))
+
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+# функция обновления информации о пользователе в таблице SearchUser
+def update_searchuser(vk_id: int, first_name=None, last_name=None, city=None, age=None, sex=None):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    list_param = [('first_name', first_name), ('last_name',last_name),
+                  ('city',city), ('age',age), ('sex',sex)]
+
+    for p in list_param:
+        if p[1]:
+            cursor.execute(f'UPDATE SearchUser SET {p[0]} = %s WHERE vk_id = %s;', (p[1], vk_id))
+
+    now_time = str(datetime.now())
+    cursor.execute('UPDATE SearchUser SET last_updated = %s WHERE vk_id = %s;', (now_time, vk_id))
+    conn.commit()
+    cursor.close()
+    conn.close()
