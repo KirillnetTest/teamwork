@@ -92,7 +92,7 @@ def user_insert(vk_id: int, first_name: str, last_name: str, city: str, age: int
     return user_vk_id
 
 #функция добавления нового подходящего пользователя из поиска в таблицу SearchUser
-def searchUser_insert(vk_id: int, first_name: str, last_name: str, city: str, age: int,
+def searchuser_insert(vk_id: int, first_name: str, last_name: str, city: str, age: int,
                       sex: int):
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -146,20 +146,6 @@ def get_info_favorite(vk_id_user: int):
 
     return new_list
 
-# функция удаления избранного кандидата для пользователя из таблицы Favorites
-def delete_favorite(favorite_vk_id:int, user_vk_id: int):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    cursor.execute('''
-    DELETE FROM favorites 
-    WHERE searchUserId = %s AND userId = %s;
-    ''', (favorite_vk_id, user_vk_id,))
-
-    conn.commit()
-    cursor.close()
-    conn.close()
-
 # функция обновления информации о пользователе в таблице SearchUser
 def update_searchuser(vk_id: int, first_name=None, last_name=None, city=None, age=None, sex=None):
     conn = get_db_connection()
@@ -177,3 +163,100 @@ def update_searchuser(vk_id: int, first_name=None, last_name=None, city=None, ag
     conn.commit()
     cursor.close()
     conn.close()
+	
+# функция удаления избранного кандидата для пользователя из таблицы Favorites
+def delete_favorite(favorite_vk_id:int, user_vk_id: int):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+    DELETE FROM favorites 
+    WHERE searchUserId = %s AND userId = %s;
+    ''', (favorite_vk_id, user_vk_id,))
+
+    conn.commit()
+    cursor.close()
+    conn.close()
+	
+# функция удаления найденного кандидата из таблицы SearchUser
+def delete_searchuser(vk_id:int):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+    DELETE FROM SearchUser
+    WHERE vk_id = %s;
+    ''', (vk_id,))
+
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+def delete_all_data():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+    DELETE FROM Favorites;
+    DELETE FROM Users;
+    DELETE FROM SearchUser;
+    ''')
+
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+
+#функция проверки наличия пользователя в таблице SearchUser
+def is_exist_searchuser(vk_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT TRUE FROM SearchUser WHERE vk_id = %s', (vk_id,))
+
+    answer = cursor.fetchall()
+    if answer:
+        res = True
+    else:
+        res = False
+
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+    return res
+
+#функция проверки наличия пользователя в таблице Favorites
+def is_exist_favorite(favorite_vk_id:int, user_vk_id: int):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT TRUE FROM Favorites WHERE vk_id = %s', (favorite_vk_id, user_vk_id))
+
+    answer = cursor.fetchall()
+    if answer:
+        res = True
+    else:
+        res = False
+
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+    return res
+
+#функция проверки наличия пользователя в таблице Users
+def is_exist_user(vk_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT TRUE FROM Users WHERE vk_id = %s', (vk_id,))
+
+    answer = cursor.fetchall()
+    if answer:
+        res = True
+    else:
+        res = False
+
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+    return res
