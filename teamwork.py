@@ -9,7 +9,7 @@ import json
 from dotenv import load_dotenv
 from vk_integration import VKInteraction
 from database import DataBase
-from get_token import get_token_with_selenium, user_token
+from get_token import get_token_with_selenium
 
 logging.basicConfig(level = logging.INFO, filename = "bot.log", encoding = "utf-8")
 load_dotenv()
@@ -17,7 +17,7 @@ TOKEN = os.getenv("VK_TOKEN")
 USER_TOKEN = os.getenv("USER_TOKEN")
 
 #Если USER_TOKEN не задан запускает Селениум для получения Токена
-if not user_token:
+if not USER_TOKEN:
 	USER_TOKEN = get_token_with_selenium()
 
 if not TOKEN or not USER_TOKEN:
