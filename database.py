@@ -80,6 +80,15 @@ class DataBase:
 	    );
 	    ''')
 
+        # Создание таблицы BlackList
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS BlackList(
+	        ID SERIAL PRIMARY KEY,
+	        user_ID INTEGER NOT NULL REFERENCES Users(vk_id),
+	        blackuser_id INTEGER NOT NULL
+        );
+        ''')
+
         conn.commit()
         cursor.close()
         conn.close()
@@ -128,6 +137,19 @@ class DataBase:
         INSERT INTO Favorites (searchUserId, userId, added_at)
         VALUES (%s, %s, %s);
         ''', (favorite_vk_id, user_vk_id, now_time))
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+    #функция добавления нежелательного пользователя в таблицу BlackList
+    def blacklist_insert(self, blacklist_vk_id: int, user_vk_id: int):
+        conn = self.get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+        INSERT INTO BlackList (user_id, blackuser_id)
+        VALUES (%s, %s);
+        ''', (blacklist_vk_id, user_vk_id,))
 
         conn.commit()
         cursor.close()
@@ -210,6 +232,7 @@ class DataBase:
         DELETE FROM Favorites;
         DELETE FROM Users;
         DELETE FROM SearchUser;
+        DELETE FROM BlackList;
         ''')
 
         conn.commit()
@@ -261,6 +284,27 @@ class DataBase:
         conn = self.get_db_connection()
         cursor = conn.cursor()
         cursor.execute('SELECT TRUE FROM Users WHERE vk_id = %s', (vk_id,))
+
+        answer = cursor.fetchall()
+        if answer:
+            res = True
+        else:
+            res = False
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        return res
+
+    # функция проверки наличия пользователя в таблице BlackList
+    def is_exist_blackuser(self, user_vk_id: int, blacklist_vk_id: int):
+        conn = self.get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+           SELECT TRUE FROM BlackList
+           WHERE user_id = %s AND blackuser_id= %s
+           ''', (user_vk_id, blacklist_vk_id, ))
 
         answer = cursor.fetchall()
         if answer:
