@@ -1,5 +1,3 @@
-from itertools import count
-
 import vk_api
 from vk_api.exceptions import VkApiError
 from typing import Optional, List, Dict
@@ -76,7 +74,7 @@ class VKInteraction:
 		params = {
 			'sort':0,
 			'count':min(count, 1000),
-			'fields':'id,first_name,last_name,sex,domain,photo_id,photo_max',
+			'fields':'sex, domain, bdate',
 			'has_photo':1,
 			'status':1
 		}
