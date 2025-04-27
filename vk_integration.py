@@ -30,7 +30,8 @@ class VKInteraction:
 		"""
 		Получение информации о пользователе
 		:param user_id: ID пользователя VK
-		:param fields: дополнительные поля (например, ['city', 'photo_max'])
+		:param fields: дополнительные поля (по умолчанию, ['first_name', 'last_name', 'city', 'sex', 'domain',
+		'bdate'])
 		:return: словарь с информацией о пользователе, содержащий только запрошенные поля
 		"""
 		# Поля по умолчанию
@@ -193,3 +194,16 @@ class VKInteraction:
 		except VkApiError as e:
 			logging.error(f"Не получилось поставить лайк: {e}")
 			return False
+
+	def get_cities(self, city_name: str) -> List[str]:
+		"""
+		Получаем список ID городов подходящих по запросу city_name
+		:param city_name: Строка поиска
+		:return: Список городов
+		"""
+
+		try:
+			return self.user_api.database.getCities(q = city_name, need_all = 1).get('items', [])
+		except VkApiError as e:
+			logging.error(f"Не удалось получить список городов>: {city_name}, ошибка: {e}")
+			return []
