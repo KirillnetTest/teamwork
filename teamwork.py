@@ -10,177 +10,376 @@ from dotenv import load_dotenv
 from vk_integration import VKInteraction
 from database import DataBase
 from get_token import get_token_with_selenium
+from datetime import datetime
 
-logging.basicConfig(level = logging.INFO, filename = "bot.log", encoding = "utf-8")
+logging.basicConfig(level=logging.INFO, filename="bot.log", encoding="utf-8", 
+                    format="%(asctime)s - %(levelname)s - %(message)s")
 load_dotenv()
+
 TOKEN = os.getenv("VK_TOKEN")
 USER_TOKEN = os.getenv("USER_TOKEN")
 
-#Если USER_TOKEN не задан запускает Селениум для получения Токена
 if not USER_TOKEN:
-	USER_TOKEN = get_token_with_selenium()
+    USER_TOKEN = get_token_with_selenium()
 
 if not TOKEN or not USER_TOKEN:
-	raise ValueError("VK_TOKEN or USER_TOKEN not found in environment variables")
+    raise ValueError("VK_TOKEN or USER_TOKEN not found in environment variables")
 
-vk = vk_api.VkApi(token = TOKEN)
+vk = vk_api.VkApi(token=TOKEN, api_version="5.131")
 longpoll = VkLongPoll(vk)
 user = VKInteraction(USER_TOKEN, vk)
 db = DataBase()
 user_state = {}
 
-
 def create_main_keyboard():
-	keyboard = VkKeyboard(one_time = False)
-	keyboard.add_button("Найти человека", color = VkKeyboardColor.POSITIVE, payload = {"command":"find_person"})
-	keyboard.add_button("Список избранных", color = VkKeyboardColor.SECONDARY, payload = {"command":"list_favorites"})
-	return keyboard.get_keyboard()
-
+    keyboard = VkKeyboard(one_time=False)
+    keyboard.add_button("Найти человека", color=VkKeyboardColor.POSITIVE, payload={"command": "set_search_params"})
+    keyboard.add_button("Список избранных", color=VkKeyboardColor.SECONDARY, payload={"command": "list_favorites"})
+    return keyboard.get_keyboard()
 
 def create_search_keyboard():
-	keyboard = VkKeyboard(one_time = False)
-	keyboard.add_button("Добавить в избранное", color = VkKeyboardColor.PRIMARY, payload = {"command":"add_favorite"})
-	keyboard.add_button("Следующий", color = VkKeyboardColor.NEGATIVE, payload = {"command":"next_person"})
-	keyboard.add_line()
-	keyboard.add_button("Назад", color = VkKeyboardColor.SECONDARY, payload = {"command":"back"})
-	return keyboard.get_keyboard()
+    keyboard = VkKeyboard(one_time=False)
+    keyboard.add_button("Добавить в избранное", color=VkKeyboardColor.PRIMARY, payload={"command": "add_favorite"})
+    keyboard.add_button("Добавить в черный список", color=VkKeyboardColor.NEGATIVE, payload={"command": "add_blacklist"})
+    keyboard.add_line()
+    keyboard.add_button("Следующий", color=VkKeyboardColor.SECONDARY, payload={"command": "next_person"})
+    keyboard.add_button("Назад", color=VkKeyboardColor.SECONDARY, payload={"command": "back"})
+    return keyboard.get_keyboard()
 
+def create_photo_like_keyboard(photos):
+    if not photos:
+        return None
+    keyboard = VkKeyboard(inline=True)
+    for i, photo in enumerate(photos[:3]):
+        try:
+            parts = photo.split('_')
+            if len(parts) < 2 or not parts[0].startswith('photo'):
+                logging.error(f"Invalid photo attachment format: {photo}")
+                continue
+            owner_id = int(parts[0].replace('photo', ''))
+            photo_id = int(parts[1])
+            keyboard.add_button(f"Лайк фото {i+1}", color=VkKeyboardColor.POSITIVE, 
+                               payload={"command": "like_photo", "owner_id": owner_id, "photo_id": photo_id})
+            if i < len(photos) - 1 and i < 2:
+                keyboard.add_line()
+        except (ValueError, IndexError) as e:
+            logging.error(f"Error parsing photo attachment {photo}: {e}")
+            continue
+    return keyboard.get_keyboard() if keyboard.buttons else None
 
-def write_msg(user_id, message, keyboard = None, attachment = None, retries = 3):
-	for attempt in range(retries):
-		try:
-			vk.method("messages.send", {
-				"user_id":user_id,
-				"message":message,
-				"random_id":random.randint(1, 2 ** 31),
-				"keyboard":keyboard,
-				"attachment":attachment
-			})
-			return
-		except vk_api.exceptions.ApiError as e:
-			if "too many requests" in str(e).lower():
-				time.sleep(1 << attempt)
-				continue
-			logging.error(f"Error sending message to {user_id}: {e}")
-			vk.method("messages.send", {
-				"user_id":user_id,
-				"message":f"Ошибка: {str(e)}. Попробуйте позже.",
-				"random_id":random.randint(1, 2 ** 31),
-				"keyboard":keyboard,
-				"attachment":attachment
-			})
-			return
-	logging.error(f"Failed to send message to {user_id} after {retries} attempts")
+def create_cancel_keyboard():
+    keyboard = VkKeyboard(one_time=True)
+    keyboard.add_button("Отмена", color=VkKeyboardColor.NEGATIVE, payload={"command": "cancel"})
+    return keyboard.get_keyboard()
 
+def create_city_selection_keyboard(cities):
+    keyboard = VkKeyboard(one_time=True)
+    for i, city in enumerate(cities[:5]):
+        keyboard.add_button(city["title"], color=VkKeyboardColor.PRIMARY, payload={"command": "select_city", "city_id": city["id"]})
+        if i < len(cities) - 1 and i < 4:
+            keyboard.add_line()
+    keyboard.add_line()
+    keyboard.add_button("Отмена", color=VkKeyboardColor.NEGATIVE, payload={"command": "cancel"})
+    return keyboard.get_keyboard()
+
+def write_msg(user_id, message, keyboard=None, attachment=None, retries=3):
+    for attempt in range(retries):
+        try:
+            vk.method("messages.send", {
+                "user_id": user_id,
+                "message": message,
+                "random_id": random.randint(1, 2 ** 31),
+                "keyboard": keyboard,
+                "attachment": attachment
+            })
+            logging.info(f"Message sent to {user_id}: {message}")
+            return
+        except vk_api.exceptions.ApiError as e:
+            if "too many requests" in str(e).lower():
+                time.sleep(0.5 * (2 ** attempt))
+                continue
+            logging.error(f"Error sending message to {user_id}: {e}")
+            vk.method("messages.send", {
+                "user_id": user_id,
+                "message": f"Ошибка: {str(e)}. Попробуйте позже.",
+                "random_id": random.randint(1, 2 ** 31),
+                "keyboard": keyboard,
+                "attachment": attachment
+            })
+            return
+    logging.error(f"Failed to send message to {user_id} after {retries} attempts")
+
+def calculate_age(bdate: str) -> int:
+    """Calculate age from birthdate string (DD.MM.YYYY or DD.MM)."""
+    if not bdate:
+        return 0
+    parts = bdate.split(".")
+    if len(parts) < 3:
+        return 0
+    try:
+        birth_year = int(parts[-1])
+        current_year = datetime.now().year
+        age = current_year - birth_year
+        return age if 0 < age <= 100 else 0
+    except ValueError:
+        return 0
+
+def handle_set_search_params(user_id):
+    user_state[user_id] = {
+        "last_command": "set_search_params",
+        "step": "age_from",
+        "search_params": {}
+    }
+    write_msg(user_id, "Введите минимальный возраст (например, 18):", create_cancel_keyboard())
+
+def handle_search_params_input(user_id, text):
+    state = user_state.get(user_id, {})
+    if state.get("last_command") != "set_search_params":
+        return False
+
+    step = state.get("step")
+    try:
+        if step == "age_from":
+            age_from = int(text)
+            if 18 <= age_from <= 100:
+                state["search_params"]["age_from"] = age_from
+                state["step"] = "age_to"
+                write_msg(user_id, "Введите максимальный возраст (например, 30):", create_cancel_keyboard())
+            else:
+                write_msg(user_id, "Возраст должен быть от 18 до 100 лет.", create_cancel_keyboard())
+        elif step == "age_to":
+            age_to = int(text)
+            if state["search_params"]["age_from"] <= age_to <= 100:
+                state["search_params"]["age_to"] = age_to
+                state["step"] = "sex"
+                write_msg(user_id, "Выберите пол (1 - женский, 2 - мужской):", create_cancel_keyboard())
+            else:
+                write_msg(user_id, f"Максимальный возраст должен быть от {state['search_params']['age_from']} до 100.", create_cancel_keyboard())
+        elif step == "sex":
+            sex = int(text)
+            if sex in [1, 2]:
+                state["search_params"]["sex"] = sex
+                state["step"] = "city"
+                write_msg(user_id, "Введите название города (например, Москва):", create_cancel_keyboard())
+            else:
+                write_msg(user_id, "Введите 1 для женского пола или 2 для мужского.", create_cancel_keyboard())
+        elif step == "city":
+            state["search_params"]["city"] = text
+            cities = user.get_cities(text)
+            if not cities:
+                write_msg(user_id, "Город не найден. Попробуйте снова:", create_cancel_keyboard())
+            elif len(cities) == 1:
+                state["search_params"]["city_id"] = cities[0]["id"]
+                handle_find_person_with_params(user_id, state["search_params"])
+            else:
+                state["step"] = "select_city"
+                state["cities"] = cities
+                write_msg(user_id, "Найдено несколько городов. Выберите один:", create_city_selection_keyboard(cities))
+        elif step == "select_city":
+            write_msg(user_id, "Пожалуйста, выберите город из списка кнопок.", create_city_selection_keyboard(state["cities"]))
+    except ValueError:
+        write_msg(user_id, "Пожалуйста, введите числовое значение для возраста или пола.", create_cancel_keyboard())
+    return True
+
+def handle_find_person_with_params(user_id, params):
+    try:
+        blacklist = db.get_blacklist(user_id)
+        users = user.user_search(
+            age_from=params["age_from"],
+            age_to=params["age_to"],
+            sex=params["sex"],
+            city=params["city_id"],
+            count=10
+        )
+        users = [u for u in users if u["id"] not in blacklist]
+        user_state[user_id] = {
+            "search_results": [u["id"] for u in users],
+            "current_index": 0,
+            "last_command": "find_person",
+            "last_search_params": params
+        }
+        if users:
+            current_user = users[0]
+            user_info = f"{current_user['first_name']} {current_user['last_name']}"
+            photos = user.get_user_photos(current_user["id"])
+            keyboard = create_search_keyboard()
+            if photos:
+                photo_keyboard = create_photo_like_keyboard(photos)
+                write_msg(user_id, f"🔍 Найден: {user_info}", keyboard=keyboard, attachment=",".join(photos))
+                if photo_keyboard:
+                    write_msg(user_id, "Нажмите, чтобы лайкнуть фото:", keyboard=photo_keyboard)
+            else:
+                write_msg(user_id, f"🔍 Найден: {user_info} (нет фото)", keyboard=keyboard)
+        else:
+            write_msg(user_id, "😔 Никто не найден. Попробуйте снова!", create_main_keyboard())
+    except (ValueError, vk_api.exceptions.ApiError) as e:
+        logging.error(f"Search error for user {user_id}: {e}")
+        write_msg(user_id, f"Ошибка поиска: {str(e)}. Попробуйте снова.", create_main_keyboard())
 
 def handle_find_person(user_id):
-	users = user.user_search(age_from = 18, age_to = 30, sex = 2, city = 1, count = 10)
-	user_state[user_id] = {
-		"search_results":[u["id"] for u in users],
-		"current_index":0,
-		"last_command":"find_person"
-	}
-	if users:
-		current_user = users[0]
-		user_info = f"{current_user['first_name']} {current_user['last_name']}"
-		photos = user.get_user_photos(current_user["id"])
-		write_msg(user_id, f"🔍 Найден: {user_info}", create_search_keyboard(), attachment = ",".join(photos))
-	else:
-		write_msg(user_id, "😔 Никто не найден. Попробуйте снова!", create_main_keyboard())
-
+    handle_set_search_params(user_id)
 
 def handle_next_person(user_id):
-	state = user_state.get(user_id, {})
-	if not state or state["last_command"] != "find_person" or not state["search_results"]:
-		write_msg(user_id, "Сначала выполните поиск!", create_main_keyboard())
-		return
-	state["current_index"] = (state["current_index"] + 1) % len(state["search_results"])
-	next_user_id = state["search_results"][state["current_index"]]
-	user_info = user.get_user_info(next_user_id)
-	photos = user.get_user_photos(next_user_id)
-	message = f"{user_info['first_name']} {user_info['last_name']}"
-	write_msg(user_id, message, create_search_keyboard(), attachment = ",".join(photos))
-
+    state = user_state.get(user_id, {})
+    if not state or state["last_command"] != "find_person" or not state["search_results"]:
+        write_msg(user_id, "Сначала выполните поиск!", create_main_keyboard())
+        return
+    state["current_index"] = (state["current_index"] + 1) % len(state["search_results"])
+    next_user_id = state["search_results"][state["current_index"]]
+    user_info = user.get_user_info(next_user_id)
+    photos = user.get_user_photos(next_user_id)
+    message = f"{user_info['first_name']} {user_info['last_name']}"
+    keyboard = create_search_keyboard()
+    if photos:
+        photo_keyboard = create_photo_like_keyboard(photos)
+        write_msg(user_id, message, keyboard=keyboard, attachment=",".join(photos))
+        if photo_keyboard:
+            write_msg(user_id, "Нажмите, чтобы лайкнуть фото:", keyboard=photo_keyboard)
+    else:
+        write_msg(user_id, f"{message} (нет фото)", keyboard=keyboard)
 
 def handle_add_favorite(user_id):
-	state = user_state.get(user_id, {})
-	if not state or state["last_command"] != "find_person" or not state["search_results"]:
-		write_msg(user_id, "Сначала найдите человека!", create_main_keyboard())
-		return
-	favorite_vk_id = state["search_results"][state["current_index"]]
-	if not db.is_exist_user(user_id):
-		user_info = user.get_user_info(user_id)
-		city = user_info.get("city", {}).get("title", "Unknown")
-		age = user_info.get("bdate", "").split(".")[-1] if user_info.get("bdate") else 0
-		db.user_insert(user_id, user_info["first_name"], user_info["last_name"], city, int(age) if age else 0,
-					   user_info["sex"])
-	if not db.is_exist_searchuser(favorite_vk_id):
-		user_info = user.get_user_info(favorite_vk_id)
-		city = user_info.get("city", {}).get("title", "Unknown")
-		age = user_info.get("bdate", "").split(".")[-1] if user_info.get("bdate") else 0
-		db.searchuser_insert(favorite_vk_id, user_info["first_name"], user_info["last_name"], city,
-							 int(age) if age else 0, user_info["sex"])
-	db.favorites_insert(favorite_vk_id, user_id)
-	write_msg(user_id, "✅ Добавлено в избранное!", create_search_keyboard())
+    state = user_state.get(user_id, {})
+    if not state or state["last_command"] != "find_person" or not state["search_results"]:
+        write_msg(user_id, "Сначала найдите человека!", create_main_keyboard())
+        return
+    favorite_vk_id = state["search_results"][state["current_index"]]
+    if db.is_exist_favorite(favorite_vk_id, user_id):
+        write_msg(user_id, "Этот пользователь уже в избранном!", create_search_keyboard())
+        return
+    if not db.is_exist_user(user_id):
+        user_info = user.get_user_info(user_id)
+        city = user_info.get("city", {}).get("title", "Unknown")
+        age = calculate_age(user_info.get("bdate", ""))
+        db.user_insert(user_id, user_info["first_name"], user_info["last_name"], city, age, user_info["sex"])
+    if not db.is_exist_searchuser(favorite_vk_id):
+        user_info = user.get_user_info(favorite_vk_id)
+        city = user_info.get("city", {}).get("title", "Unknown")
+        age = calculate_age(user_info.get("bdate", ""))
+        db.searchuser_insert(favorite_vk_id, user_info["first_name"], user_info["last_name"], city, age, user_info["sex"])
+    db.favorites_insert(favorite_vk_id, user_id)
+    write_msg(user_id, "✅ Добавлено в избранное!", create_search_keyboard())
 
+def handle_add_blacklist(user_id):
+    state = user_state.get(user_id, {})
+    if not state or state["last_command"] != "find_person" or not state["search_results"]:
+        write_msg(user_id, "Сначала найдите человека!", create_main_keyboard())
+        return
+    blacklist_vk_id = state["search_results"][state["current_index"]]
+    if db.is_exist_blackuser(user_id, blacklist_vk_id):
+        write_msg(user_id, "Этот пользователь уже в черном списке!", create_search_keyboard())
+        return
+    if not db.is_exist_user(user_id):
+        user_info = user.get_user_info(user_id)
+        city = user_info.get("city", {}).get("title", "Unknown")
+        age = calculate_age(user_info.get("bdate", ""))
+        db.user_insert(user_id, user_info["first_name"], user_info["last_name"], city, age, user_info["sex"])
+    db.blacklist_insert(blacklist_vk_id, user_id)
+    write_msg(user_id, "🚫 Добавлено в черный список!", create_search_keyboard())
+
+def handle_like_photo(user_id, owner_id, photo_id):
+    state = user_state.get(user_id, {})
+    if not state or state["last_command"] != "find_person" or not state["search_results"]:
+        write_msg(user_id, "Сначала найдите человека!", create_main_keyboard())
+        return
+    current_user_id = state["search_results"][state["current_index"]]
+    if owner_id != current_user_id:
+        write_msg(user_id, "Ошибка: Нельзя лайкнуть фото другого пользователя!", create_search_keyboard())
+        return
+    success = user.get_like_to_photo(owner_id, photo_id)
+    if success:
+        logging.info(f"User {user_id} liked photo {photo_id} of user {owner_id}")
+        write_msg(user_id, "❤️ Лайк поставлен на фото!", create_search_keyboard())
+    else:
+        logging.error(f"User {user_id} failed to like photo {photo_id} of user {owner_id}")
+        write_msg(user_id, "❌ Не удалось поставить лайк на фото.", create_search_keyboard())
 
 def handle_list_favorites(user_id):
-	favorites = db.get_info_favorite(user_id)
-	if not favorites:
-		write_msg(user_id, "😔 У вас нет избранных.", create_main_keyboard())
-		return
-	message = "⭐ Ваши избранные:\n" + "\n".join(f"{i + 1}. {name} ({url})" for i, (url, name) in enumerate(favorites))
-	write_msg(user_id, message, create_main_keyboard())
-
+    favorites = db.get_info_favorite(user_id)
+    if not favorites:
+        write_msg(user_id, "😔 У вас нет избранных.", create_main_keyboard())
+        return
+    message = "⭐ Ваши избранные:\n" + "\n".join(f"{i + 1}. {name} ({url})" for i, (url, name) in enumerate(favorites))
+    write_msg(user_id, message, create_main_keyboard())
 
 while True:
-	try:
-		for event in longpoll.listen():
-			if event.type == VkEventType.MESSAGE_NEW and event.to_me:
-				user_id = event.user_id
-				payload = event.message.get("payload")
-				if payload:
-					payload = json.loads(payload)
-					command = payload.get("command")
-					if command == "find_person":
-						handle_find_person(user_id)
-					elif command == "add_favorite":
-						handle_add_favorite(user_id)
-					elif command == "list_favorites":
-						handle_list_favorites(user_id)
-					elif command == "next_person":
-						handle_next_person(user_id)
-					elif command == "back":
-						write_msg(user_id, "Возвращаемся в главное меню.", create_main_keyboard())
-					continue
+    try:
+        for event in longpoll.listen():
+            if event.type == VkEventType.MESSAGE_NEW and event.to_me:
+                user_id = event.user_id
+                payload = event.extra_values.get("payload")
+                if payload:
+                    try:
+                        payload = json.loads(payload) if isinstance(payload, str) else payload
+                        command = payload.get("command")
+                        if command == "set_search_params":
+                            handle_set_search_params(user_id)
+                        elif command == "find_person":
+                            handle_find_person(user_id)
+                        elif command == "add_favorite":
+                            handle_add_favorite(user_id)
+                        elif command == "list_favorites":
+                            handle_list_favorites(user_id)
+                        elif command == "next_person":
+                            handle_next_person(user_id)
+                        elif command == "back":
+                            write_msg(user_id, "Возвращаемся в главное меню.", create_main_keyboard())
+                        elif command == "cancel":
+                            user_state.pop(user_id, None)
+                            write_msg(user_id, "Поиск отменён.", create_main_keyboard())
+                        elif command == "select_city":
+                            city_id = payload.get("city_id")
+                            if city_id and user_id in user_state and user_state[user_id].get("step") == "select_city":
+                                user_state[user_id]["search_params"]["city_id"] = city_id
+                                handle_find_person_with_params(user_id, user_state[user_id]["search_params"])
+                            else:
+                                write_msg(user_id, "Ошибка выбора города. Попробуйте снова.", create_main_keyboard())
+                        elif command == "add_blacklist":
+                            handle_add_blacklist(user_id)
+                        elif command == "like_photo":
+                            owner_id = payload.get("owner_id")
+                            photo_id = payload.get("photo_id")
+                            if owner_id and photo_id:
+                                handle_like_photo(user_id, owner_id, photo_id)
+                            else:
+                                write_msg(user_id, "Ошибка: Не удалось определить фото для лайка.", create_search_keyboard())
+                        continue
+                    except json.JSONDecodeError as e:
+                        logging.error(f"Payload JSON decode error: {e}, payload: {payload}")
+                        write_msg(user_id, "Ошибка обработки команды. Попробуйте снова.", create_main_keyboard())
+                        continue
 
-				request = event.text.lower().strip()
-				logging.info(f"Message from {user_id}: {request}")
-				if not request:
-					write_msg(user_id, "Пожалуйста, введите команду или используйте кнопки!", create_main_keyboard())
-					continue
+                request = event.text.lower().strip() if hasattr(event, 'text') else ""
+                logging.info(f"Message from {user_id}: {request}")
+                if not request:
+                    write_msg(user_id, "Пожалуйста, введите команду или используйте кнопки!", create_main_keyboard())
+                    continue
 
-				if request == "привет":
-					write_msg(user_id, "Привет! Я бот для знакомств. 🚀\nНажми «Найти человека», чтобы начать.",
-							  create_main_keyboard())
-				elif request == "найти человека":
-					handle_find_person(user_id)
-				elif request == "добавить в избранное":
-					handle_add_favorite(user_id)
-				elif request == "список избранных":
-					handle_list_favorites(user_id)
-				elif request == "следующий":
-					handle_next_person(user_id)
-				elif request == "помощь":
-					write_msg(user_id,
-							  "Доступные команды:\n1. Найти человека — поиск новых людей\n2. Добавить в избранное — "
-							  "сохранить пользователя\n3. Список избранных — посмотреть избранных\n4. Следующий — "
-							  "следующий пользователь\nИспользуйте кнопки ниже!",
-							  create_main_keyboard())
-				else:
-					write_msg(user_id, "Команда не распознана. Попробуйте «помощь» или используйте кнопки.",
-							  create_main_keyboard())
+                if handle_search_params_input(user_id, request):
+                    continue
 
-	except Exception as e:
-		logging.error(f"Longpoll error: {e}")
-		time.sleep(5)
+                if request == "привет":
+                    write_msg(user_id, "Привет! Я бот для знакомств. 🚀\nНажми «Найти человека», чтобы начать.",
+                              create_main_keyboard())
+                elif request == "найти человека":
+                    handle_set_search_params(user_id)
+                elif request == "добавить в избранное":
+                    handle_add_favorite(user_id)
+                elif request == "список избранных":
+                    handle_list_favorites(user_id)
+                elif request == "следующий":
+                    handle_next_person(user_id)
+                elif request == "помощь":
+                    write_msg(user_id,
+                              "Доступные команды:\n1. Найти человека — поиск новых людей\n2. Добавить в избранное — "
+                              "сохранить пользователя\n3. Добавить в черный список — исключить пользователя\n"
+                              "4. Лайк фото — лайкнуть фото пользователя\n5. Список избранных — посмотреть избранных\n"
+                              "6. Следующий — следующий пользователь\nИспользуйте кнопки ниже!",
+                              create_main_keyboard())
+                else:
+                    write_msg(user_id, "Команда не распознана. Попробуйте «помощь» или используйте кнопки.",
+                              create_main_keyboard())
+
+    except Exception as e:
+        logging.error(f"Longpoll error: {e}")
+        time.sleep(5)
