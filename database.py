@@ -149,13 +149,13 @@ class DataBase:
         cursor.execute('''
         INSERT INTO BlackList (user_id, blackuser_id)
         VALUES (%s, %s);
-        ''', (blacklist_vk_id, user_vk_id,))
+        ''', (user_vk_id, blacklist_vk_id,))
 
         conn.commit()
         cursor.close()
         conn.close()
 
-    #Функция для получения списка избранных для одного пользователя, возраает url, имя и фамилию без фотографий
+    #Функция для получения списка избранных для одного пользователя, возвращает url, имя и фамилию без фотографий
     def get_info_favorite(self, vk_id_user: int):
         conn = self.get_db_connection()
         cursor = conn.cursor()
@@ -164,6 +164,29 @@ class DataBase:
         SELECT vk_id,first_name,last_name FROM SearchUser
         WHERE vk_id IN (SELECT searchUserId FROM favorites WHERE userid= %s)
         ''', (vk_id_user,))
+
+        favorite_users = cursor.fetchall()
+        new_list = []
+        for i in favorite_users:
+            url = f'https://vk.com/id{i[0]}'
+            new_name = f'{i[1]} {i[2]}'
+            new_list.append([url, new_name])
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        return new_list
+
+    # Функция для получения Черного списка для одного пользователя, возвращает url, имя и фамилию
+    def get_blacklist(self, vk_id_user: int):
+        conn = self.get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT vk_id,first_name,last_name FROM SearchUser
+            WHERE vk_id IN (SELECT blackuser_id FROM blacklist WHERE user_id = %s)
+                ''', (vk_id_user,))
 
         favorite_users = cursor.fetchall()
         new_list = []
@@ -230,9 +253,9 @@ class DataBase:
 
         cursor.execute('''
         DELETE FROM Favorites;
+        DELETE FROM BlackList;
         DELETE FROM Users;
         DELETE FROM SearchUser;
-        DELETE FROM BlackList;
         ''')
 
         conn.commit()
