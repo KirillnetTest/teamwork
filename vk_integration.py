@@ -1,3 +1,4 @@
+from http.client import responses
 from time import sleep
 
 import vk_api
@@ -5,8 +6,13 @@ from vk_api.exceptions import VkApiError
 from typing import Optional, List, Dict
 import logging
 
-logging.basicConfig(level = logging.INFO, filename = "api.log", encoding = "utf-8")
-
+logging.basicConfig(
+    level=logging.INFO,
+    filename="api.log",
+    encoding="utf-8",
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 class VKInteraction:
 
@@ -22,9 +28,13 @@ class VKInteraction:
 		self.api_version = api_version
 
 		# инициализация сессии для использования методов использующих Токен Пользователя
-		self.user_session = vk_api.VkApi(token = user_token,
-										 api_version = api_version)
-		self.user_api = self.user_session.get_api()
+		try:
+			self.user_session = vk_api.VkApi(token = user_token,
+											 api_version = api_version)
+			self.user_api = self.user_session.get_api()
+			logger.info(f'Инициализация сессии прошла успешно')
+		except Exception as e:
+			logger.critical(f"Не удалось инициализировать сессию: {e}")
 
 	def get_user_info(self, user_id: int, fields: Optional[List[str]] = None) -> Dict:
 		"""
@@ -40,19 +50,21 @@ class VKInteraction:
 
 		try:
 			# Получаем информацию о пользователе
+			logger.info(f'Получаем информацию для user_id: {user_id}')
 			user_get_response = self.group_api.method('users.get', {'user_id':user_id, 'fields':requested_fields})
 
 			if not user_get_response:
-				logging.info(f"User {user_id}: no data received")
+				logging.info(f'Получены неверные данные: {user_id}')
 				return {}
 
 			user_data = user_get_response[0]
+			logger.info(f'Данные получены для пользователя с user_id: {user_id}')
 
 			# Фильтруем результат, оставляя только запрошенные поля
 			return {field:user_data.get(field) for field in requested_fields}
 
 		except VkApiError as e:
-			print(f"Ошибка получения информации о пользователе: {e}")
+			logger.error(f"Ошибка получения информации для user_id {user_id}: {e}")
 			return {}
 
 	def user_search(
@@ -74,9 +86,12 @@ class VKInteraction:
 		:return: список людей подходящих под парамметры запроса
 		"""
 		result = []
+		logger.info(f'Начало поиска пользователей с параметрами: возраст от {age_from} до {age_to}, '
+					f'пол {sex}, город {city}, количество {count}')
 
 		# Проверяем что количество возвращаемых людей больше 0
 		if count <= 0:
+			logger.warning('Параметр количества <= 0, возвращаем пустой список')
 			return result
 
 		params = {
@@ -86,43 +101,52 @@ class VKInteraction:
 			'has_photo':1,
 			'status':1
 		}
+		try:
+			if age_from is not None:
+				params['age_from'] = age_from
+			if age_to is not None:
+				params['age_to'] = age_to
+			if age_from is not None and age_to is not None and age_from > age_to:
+				error_msg = 'Минимальный возраст должен быть меньше максимального'
+				logger.error(error_msg)
+				raise ValueError(error_msg)
+			if sex is not None:
+				if sex not in (1, 2):
+					error_msg = 'Пол должен быть 1 (женский) или 2 (мужской)'
+					logger.error(error_msg)
+					raise ValueError(error_msg)
+				params['sex'] = sex
+			if city is not None:
+				params['city'] = city
 
-		if age_from is not None:
-			params['age_from'] = age_from
-		if age_to is not None:
-			params['age_to'] = age_to
-		if age_from is not None and age_to is not None and age_from > age_to:
-			raise ValueError("age_from must be smaller than age_to")
-		if sex is not None:
-			if sex not in (1, 2):
-				raise ValueError("Sex must be 1 (female) or 2 (male)")
-			params['sex'] = sex
-		if city is not None:
-			params['city'] = city
+			remaining = count
+			sleep_count = 0
+			# Обходим циклом все пользователей переданных в переменной count группами по 1000 человек
+			while remaining > 0:
+				# Обходим ограничение на 3 запроса в секунду. Используем sleep на 1 секунду каждые 3 цикла
+				if sleep_count % 3 == 0 and sleep_count > 0:
+					sleep(1)
+				sleep_count += 1
 
-		remaining = count
-		sleep_count = 0
-		# Обходим циклом все пользователей переданных в переменной count группами по 1000 человек
-		while remaining > 0:
-			# Обходим ограничение на 3 запроса в секунду. Используем sleep на 1 секунду каждые 3 цикла
-			if sleep_count % 3 == 0 and sleep_count > 0:
-				sleep(1)
-			sleep_count += 1
+				params['count'] = min(remaining, 1000)
+				params['offset'] = len(result)
 
-			params['count'] = min(remaining, 1000)
-			params['offset'] = len(result)
+				try:
+					response = self.user_api.users.search(**params)
+					result.extend(response['items'])
+					remaining -= params['count']
+					logger.debug(f"Получено {len(response['items'])} пользователей в текущей выборке")
 
-			try:
-				response = self.user_api.users.search(**params)
-				result.extend(response['items'])
-				remaining -= params['count']
+					if len(response['items']) < params['count']:
+						logger.info(f"Получено меньше запрошенного ({len(response['items'])} < {params['count']}), "
+									"завершение цикла")
+						break
 
-				if len(response['items']) < params['count']:
+				except VkApiError as e:
+					logging.error(f"Ошибка поиска пользователей: {e}")
 					break
-
-			except VkApiError as e:
-				logging.error(f"Ошибка поиска пользователей: {e}")
-				break
+		except Exception as e:
+			logger.error(f"Ошибка при настройке параметров поиска: {e}")
 
 		# Удаление дубликатов пользователей по ID
 		seen_ids = set()
@@ -132,16 +156,19 @@ class VKInteraction:
 				seen_ids.add(user['id'])
 				unique_result.append(user)
 
+		logger.info(f"Поиск пользователей завершен. Найдено {len(unique_result)} уникальных пользователей")
 		return unique_result
 
 	def get_user_photos(self, user_id: int, count: int = 3) -> List[str]:
 		"""
-		Получение 3 фотографий из профиля пользователя в формате Attachment
+		Получение фотографий из профиля пользователя и фотографий, где пользователь отмечен.
+		Возвращает указанное количество самых популярных фотографий (по лайкам) в формате Attachment.
 
-		:param user_id: ID полизователя VK
+		:param user_id: ID пользователя VK
 		:param count: количество фотографий (по умолчанию 3)
 		:return Список Attachment фотографий или пустой список в случае ошибки
 		"""
+		logger.info(f"Получение фотографий пользователя с ID: {user_id}, количество: {count}")
 		try:
 			# Получаем список фотографий из профиля пользователя
 			response_profile = self.user_api.photos.get(
@@ -153,24 +180,27 @@ class VKInteraction:
 			# Получаем список фотографий, где отмечен пользователь
 			response_tag = self.user_api.photos.get(
 				owner_id = user_id,
+				album_id = 'wall',
 				feed_type = 'photo_tag',
 				extended = 1
 			)
 
-			attachments = []
-
 			photos_profile = response_profile.get('items', [])
 			photos_tag = response_tag.get('items', [])
+			logger.debug(f"Получено {len(photos_profile)} фото профиля и {len(photos_tag)} фото с отметками")
 
 			# Объединяем оба списка в один и сортируем по количеству Лайков
 			photos = photos_profile + photos_tag
-			photos_sorted = sorted(photos, key = lambda x:x["likes"]["count"], reverse = True)
+			photos_sorted = sorted(photos, key = lambda x:x["likes"]["count"], reverse = True)[:count]
 
 			# Фортируем список Attachments по выбранным фотографиям
-			for photo in photos_sorted[:count]:
-				attachments.append('photo{}_{}_{}'.format(photo['owner_id'], photo['id'], self.user_token))
+			result = [
+				f"photo{photo['owner_id']}_{photo['id']}_{self.user_token}"
+				for photo in photos_sorted
+			]
+			logger.info(f"Успешно подготовлено {len(result)} фото-прикреплений")
 
-			return attachments[:count]
+			return result
 
 		except VkApiError as e:
 			logging.error(f"Ошибка получения фотографий: {e}")
@@ -179,31 +209,47 @@ class VKInteraction:
 	def get_like_to_photo(self, owner_id: int, photo_id: int) -> bool:
 		"""
 		Поставить лайк на фото
-		:param owner_id: ID владельца фото
+		:param owner_id: ID владельца фото (может быть отрицательным для групп)
 		:param photo_id: ID фотографии
 		:return: True - если удачно и False в противном случае
 		"""
+		logger.info(f"Попытка поставить лайк на фото {photo_id} пользователя {owner_id}")
 		try:
-			self.user_api.photos.likes.add(
+			response = self.user_api.photos.likes.add(
 				type = 'photo',
 				owner_id = owner_id,
 				item_id = photo_id
 			)
-			logging.info(f"Лайк успешно поставлен на фото {photo_id} пользователя {owner_id}")
-			return True
-		except VkApiError as e:
-			logging.error(f"Не получилось поставить лайк: {e}")
+
+			# Проверяем, что лайк действительно был поставлен
+			if response.get('likes', 0) > 0:
+				logging.info(f"Лайк успешно поставлен на фото {photo_id} пользователя {owner_id}")
+				return True
+
+			logging.warning(f"Лайк не был зарегистрирован для фото {photo_id} пользователя {owner_id}")
 			return False
 
-	def get_cities(self, city_name: str) -> List[str]:
+		except VkApiError as e:
+			logging.error(f"Ошибка при попытке поставить лайк на фото {photo_id} пользователя {owner_id}: {e}")
+			return False
+
+	def get_cities(self, city_name: str) -> List[dict]:
 		"""
 		Получаем список ID городов подходящих по запросу city_name
 		:param city_name: Строка поиска
-		:return: Список городов
+		:return: Список словарей с информацией о городах
 		"""
-
+		logger.info(f"Поиск городов по названию: {city_name}")
 		try:
-			return self.user_api.database.getCities(q = city_name, need_all = 1).get('items', [])
+			if not city_name or not isinstance(city_name, str):
+				logging.warning(f"Получен некорректный город для поиска: {city_name}")
+				return []
+
+			response = self.user_api.database.getCities(q = city_name, need_all = 1)
+			cities = response.get('items', [])
+			logger.info(f"Найдено {len(cities)} городов по запросу '{city_name}'")
+			return cities
+
 		except VkApiError as e:
 			logging.error(f"Не удалось получить список городов>: {city_name}, ошибка: {e}")
 			return []
