@@ -41,27 +41,35 @@
 ### Модули
 **teamwork** - основной модуль, используется для запуска бота
 
--`create_main_keyboard():`
+-`create_main_keyboard():` - функция для создания клавиатуры из двух кнопок "Найти человека" и "Список избранных"
 
--`create_search_keyboard():`
+-`create_search_keyboard():` - функция для создания клавиатуры, состоящей из кнопок "Добавить в избранное", "Добавить в черный список", "Следующий", "Назад"
 
--`create_photo_like_keyboard()`
+-`create_photo_like_keyboard()` - функция для создания кнопки для того, чтобы поставить лайк фото
 
--`create_cancel_keyboard()`
+-`create_city_selection_keyboard()` - функция для создания клавиатуры для выбора города
 
--`handle_find_person(user_id)`
+-`create_cancel_keyboard()` - функция для создания в чате кнопки отмены
 
--`handle_find_person_with_params()`
+-`write_msg()`- Функция для отправки от имени бота сообщений в чат.
 
--`handle_next_person(user_id)`
+-`calculate_age()` - функция, высчитывающая возраст по дате рождения, возвращает число int
 
--`handle_add_favorite(user_id)`
+-`handle_set_search_params` - функция для отправки в чат сообщения "Введите минимальный возраст (например, 18):"
 
--`handle_list_favorites(user_id)`
+-`handle_search_params_input` - функция для получения через чат от пользователя информации для поиска
 
--`handle_add_blacklist()`
+-`handle_find_person_with_params()` - функция для поиска кандидата, используя полученые от пользователя параметры params
 
--`handle_like_photo()`
+-`handle_next_person(user_id)` - функция для выведения в чат следующего  пользователя из списка найденных по заданным параметрам
+
+-`handle_add_favorite(user_id)` - используя выбранный в чате user_id - VK ID нужного человека, добавляет в Избранное
+
+-`handle_list_favorites(user_id)` - Функция для отправки в чат списка избранных, выводит имя, фамилию, ссылку на профиль 
+
+-`handle_add_blacklist()` - используя выбранный в чате user_id - VK ID нежелательного человека, добавляет в Черный Список
+
+-`handle_like_photo()` - функция для отправки лайка фото, user_id - VK ID пользователя, owner_id - VK ID найденного человека, photo_id - id фото
 
 
 **database** - предназначен для работы с базой данных
