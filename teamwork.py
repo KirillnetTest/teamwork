@@ -50,22 +50,37 @@ def create_photo_like_keyboard(photos):
     if not photos:
         return None
     keyboard = VkKeyboard(inline=True)
+    has_buttons = False
+    
     for i, photo in enumerate(photos[:3]):
         try:
             parts = photo.split('_')
             if len(parts) < 2 or not parts[0].startswith('photo'):
                 logging.error(f"Invalid photo attachment format: {photo}")
                 continue
-            owner_id = int(parts[0].replace('photo', ''))
-            photo_id = int(parts[1])
-            keyboard.add_button(f"Лайк фото {i+1}", color=VkKeyboardColor.POSITIVE, 
-                               payload={"command": "like_photo", "owner_id": owner_id, "photo_id": photo_id})
+                
+            owner_id = int(parts[1])
+            photo_id = int(parts[2])
+            
+            keyboard.add_button(
+                f"Лайк фото {i+1}", 
+                color=VkKeyboardColor.POSITIVE, 
+                payload={
+                    "command": "like_photo", 
+                    "owner_id": owner_id, 
+                    "photo_id": photo_id
+                }
+            )
+            has_buttons = True
+            
             if i < len(photos) - 1 and i < 2:
                 keyboard.add_line()
+                
         except (ValueError, IndexError) as e:
             logging.error(f"Error parsing photo attachment {photo}: {e}")
             continue
-    return keyboard.get_keyboard() if keyboard.buttons else None
+            
+    return keyboard.get_keyboard() if has_buttons else None
 
 def create_cancel_keyboard():
     keyboard = VkKeyboard(one_time=True)
@@ -200,16 +215,20 @@ def handle_find_person_with_params(user_id, params):
         }
         if users:
             current_user = users[0]
-            user_info = f"{current_user['first_name']} {current_user['last_name']}"
+            profile_link = f"https://vk.com/id{current_user['id']}"
+            user_info = f"{current_user['first_name']} {current_user['last_name']}\nПрофиль: {profile_link}"
+            
             photos = user.get_user_photos(current_user["id"])
             keyboard = create_search_keyboard()
+            
             if photos:
+                clean_photos = [f"photo{photo.split('_')[1]}_{photo.split('_')[2]}" for photo in photos]
                 photo_keyboard = create_photo_like_keyboard(photos)
-                write_msg(user_id, f"🔍 Найден: {user_info}", keyboard=keyboard, attachment=",".join(photos))
+                write_msg(user_id, user_info, keyboard=keyboard, attachment=",".join(clean_photos[:3]))
                 if photo_keyboard:
                     write_msg(user_id, "Нажмите, чтобы лайкнуть фото:", keyboard=photo_keyboard)
             else:
-                write_msg(user_id, f"🔍 Найден: {user_info} (нет фото)", keyboard=keyboard)
+                write_msg(user_id, f"{user_info}\n(нет фото)", keyboard=keyboard)
         else:
             write_msg(user_id, "😔 Никто не найден. Попробуйте снова!", create_main_keyboard())
     except (ValueError, vk_api.exceptions.ApiError) as e:
