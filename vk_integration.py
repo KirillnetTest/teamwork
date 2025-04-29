@@ -2,17 +2,19 @@ from http.client import responses
 from time import sleep
 
 import vk_api
+from click import group
 from vk_api.exceptions import VkApiError
 from typing import Optional, List, Dict
 import logging
 
 logging.basicConfig(
-    level=logging.INFO,
-    filename="api.log",
-    encoding="utf-8",
-    format="%(asctime)s - %(levelname)s - %(message)s"
+	level = logging.INFO,
+	filename = "api.log",
+	encoding = "utf-8",
+	format = "%(asctime)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
+
 
 class VKInteraction:
 
@@ -24,7 +26,7 @@ class VKInteraction:
 		:param VK: Экзепляр VK_API"
 		"""
 		self.user_token = user_token
-		self.group_api = VK
+		group_session = VK
 		self.api_version = api_version
 
 		# инициализация сессии для использования методов использующих Токен Пользователя
@@ -32,6 +34,7 @@ class VKInteraction:
 			self.user_session = vk_api.VkApi(token = user_token,
 											 api_version = api_version)
 			self.user_api = self.user_session.get_api()
+			self.group_api = group_session.get_api()
 			logger.info(f'Инициализация сессии прошла успешно')
 		except Exception as e:
 			logger.critical(f"Не удалось инициализировать сессию: {e}")
@@ -51,11 +54,15 @@ class VKInteraction:
 		try:
 			# Получаем информацию о пользователе
 			logger.info(f'Получаем информацию для user_id: {user_id}')
-			user_get_response = self.group_api.method('users.get', {'user_id':user_id, 'fields':requested_fields})
+
+			user_get_response = self.group_api.users.get(
+				user_id = user_id,
+				fields = requested_fields
+			)
+			# user_get_response = self.group_api.method('users.get', {'user_id':user_id, 'fields':requested_fields})
 
 			if not user_get_response:
 				logging.info(f'Получены неверные данные: {user_id}')
-				return {}
 
 			user_data = user_get_response[0]
 			logger.info(f'Данные получены для пользователя с user_id: {user_id}')
