@@ -52,43 +52,36 @@ def create_search_keyboard():
 	return keyboard.get_keyboard()
 
 
-def create_photo_like_keyboard(photos):
-	if not photos:
+def create_photo_like_keyboard(photo):
+	if not photo:
 		return None
 
 	keyboard = VkKeyboard(inline = True)
-	has_buttons = False
 
-	for i, photo in enumerate(photos[:3]):
-		try:
-			parts = photo.split('_')
-			if len(parts) < 2 or not parts[0].startswith('photo'):
-				logging.error(f"Invalid photo attachment format: {photo}")
-				continue
+	try:
+		parts = photo.split('_')
+		if len(parts) < 2 or not parts[0].startswith('photo'):
+			logging.error(f"Invalid photo attachment format: {photo}")
+			return None
 
-			owner_id = int(parts[0][5:])
-			photo_id = int(parts[1])
+		owner_id = int(parts[0][5:])
+		photo_id = int(parts[1])
 
-			keyboard.add_button(
-				f"❤️ Лайк фото {i + 1}",
-				color = VkKeyboardColor.POSITIVE,
-				payload = {
-					"command":"like_photo",
-					"owner_id":owner_id,
-					"photo_id":photo_id,
-					"photo_index":i + 1
-				}
-			)
-			has_buttons = True
+		keyboard.add_button(
+			"❤️ Лайк фото",
+			color = VkKeyboardColor.POSITIVE,
+			payload = {
+				"command":"like_photo",
+				"owner_id":owner_id,
+				"photo_id":photo_id
+			}
+		)
 
-			if i < len(photos[:3]) - 1:
-				keyboard.add_line()
+		return keyboard.get_keyboard()
 
-		except (ValueError, IndexError) as e:
-			logging.error(f"Error parsing photo attachment {photo}: {e}")
-			continue
-
-	return keyboard.get_keyboard() if has_buttons else None
+	except (ValueError, IndexError) as e:
+		logging.error(f"Error parsing photo attachment {photo}: {e}")
+		return None
 
 
 def create_cancel_keyboard():
@@ -245,7 +238,7 @@ def handle_find_person_with_params(user_id, params):
 				# Отправляем каждое фото с кнопкой отдельным сообщением
 				for i, photo in enumerate(photos[:3]):
 					logging.info(f"<UNK> photo = {photo}")
-					photo_keyboard = create_photo_like_keyboard([photo])  # Создаем клавиатуру для одного фото
+					photo_keyboard = create_photo_like_keyboard(str(photo))  # Создаем клавиатуру для одного фото
 					write_msg(user_id, attachment = photo)
 					if photo_keyboard:
 						write_msg(user_id, f"Лайкнуть фото {i + 1}:", keyboard = photo_keyboard)
@@ -267,7 +260,6 @@ def handle_find_person(user_id):
 def handle_next_person(user_id):
 	logging.info(f"Обработка запроса 'следующий человек' для пользователя {user_id}")
 	state = user_state.get(user_id, {})
-
 
 	state["current_index"] = (state["current_index"] + 1) % len(state["search_results"])
 	next_user_id = state["search_results"][state["current_index"]]

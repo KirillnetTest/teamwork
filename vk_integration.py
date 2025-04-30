@@ -223,7 +223,7 @@ class VKInteraction:
 		"""
 		logger.info(f"Попытка поставить лайк на фото {photo_id} пользователя {owner_id}")
 		try:
-			response = self.user_api.photos.likes.add(
+			response = self.user_api.likes.add(
 				type = 'photo',
 				owner_id = owner_id,
 				item_id = photo_id

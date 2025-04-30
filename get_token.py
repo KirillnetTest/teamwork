@@ -10,7 +10,7 @@ user_token = None
 # Параметры приложения VK
 CLIENT_ID = "52935184"
 REDIRECT_URI = "https://oauth.vk.com/blank.html"  # Сервер авторизации
-SCOPE = "photos.get,users.search,wall,likes.add, database.getCities"
+SCOPE = "photos,users,database,wall,likes"
 
 
 def get_token_with_selenium():
