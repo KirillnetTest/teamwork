@@ -1,4 +1,5 @@
 import time
+import pyautogui
 
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver import Chrome, ChromeOptions, Keys
@@ -32,8 +33,16 @@ def get_token_with_selenium():
 			f"v=5.199"
 		)
 
-		browser.get(auth_url)
+		# Устанавливаем окно в центр экрана
+		screen_width, screen_height = pyautogui.size()
+		window_width = 900
+		window_height = 650
+		position_x = (screen_width - window_width) // 2
+		position_y = (screen_height - window_height) // 2
 
+		browser.set_window_rect(x = position_x, y = position_y, width = window_width, height = window_height)
+
+		browser.get(auth_url)
 
 		# Ждем, пока URL не изменится на redirect_uri
 		while not browser.current_url.startswith(REDIRECT_URI):

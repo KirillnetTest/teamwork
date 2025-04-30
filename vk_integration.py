@@ -59,7 +59,6 @@ class VKInteraction:
 				user_id = user_id,
 				fields = requested_fields
 			)
-			# user_get_response = self.group_api.method('users.get', {'user_id':user_id, 'fields':requested_fields})
 
 			if not user_get_response:
 				logging.info(f'Получены неверные данные: {user_id}')
@@ -166,7 +165,7 @@ class VKInteraction:
 		logger.info(f"Поиск пользователей завершен. Найдено {len(unique_result)} уникальных пользователей")
 		return unique_result
 
-	def get_user_photos(self, user_id: int, count: int = 3) -> List[str]:
+	def get_user_photos(self, user_id: int) -> List[str]:
 		"""
 		Получение фотографий из профиля пользователя и фотографий, где пользователь отмечен.
 		Возвращает указанное количество самых популярных фотографий (по лайкам) в формате Attachment.
@@ -175,7 +174,7 @@ class VKInteraction:
 		:param count: количество фотографий (по умолчанию 3)
 		:return Список Attachment фотографий или пустой список в случае ошибки
 		"""
-		logger.info(f"Получение фотографий пользователя с ID: {user_id}, количество: {count}")
+		logger.info(f"Получение фотографий пользователя с ID: {user_id}")
 		try:
 			# Получаем список фотографий из профиля пользователя
 			response_profile = self.user_api.photos.get(
@@ -198,14 +197,16 @@ class VKInteraction:
 
 			# Объединяем оба списка в один и сортируем по количеству Лайков
 			photos = photos_profile + photos_tag
-			photos_sorted = sorted(photos, key = lambda x:x["likes"]["count"], reverse = True)[:count]
+			photos_sorted = sorted(photos, key = lambda x:x["likes"]["count"], reverse = True)
 
 			# Фортируем список Attachments по выбранным фотографиям
 			result = [
-				f"photo{photo['owner_id']}_{photo['id']}_{self.user_token}"
+				# f"photo{photo['owner_id']}_{photo['id']}_{self.user_token}"
+				f"photo{photo['owner_id']}_{photo['id']}"
 				for photo in photos_sorted
 			]
 			logger.info(f"Успешно подготовлено {len(result)} фото-прикреплений")
+			logger.info(f"Итоговая строка Attachments: {result}")
 
 			return result
 

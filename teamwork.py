@@ -21,15 +21,15 @@ load_dotenv()
 TOKEN = os.getenv("VK_TOKEN")
 USER_TOKEN = os.getenv("USER_TOKEN")
 
-if not USER_TOKEN:
-	USER_TOKEN = get_token_with_selenium()
+# if not USER_TOKEN:
+# 	USER_TOKEN = get_token_with_selenium()
 
-if not TOKEN or not USER_TOKEN:
-	raise ValueError("VK_TOKEN or USER_TOKEN not found in environment variables")
+if not TOKEN:
+	raise ValueError("VK_TOKEN not found in environment variables")
 
-vk = vk_api.VkApi(token = TOKEN, api_version = "5.131")
+vk = vk_api.VkApi(token = TOKEN, api_version = "5.199")
 longpoll = VkLongPoll(vk)
-user = VKInteraction(USER_TOKEN, vk)
+user = None
 db = DataBase()
 user_state = {}
 
@@ -55,6 +55,7 @@ def create_search_keyboard():
 def create_photo_like_keyboard(photos):
 	if not photos:
 		return None
+
 	keyboard = VkKeyboard(inline = True)
 	has_buttons = False
 
@@ -65,21 +66,22 @@ def create_photo_like_keyboard(photos):
 				logging.error(f"Invalid photo attachment format: {photo}")
 				continue
 
-			owner_id = int(parts[1])
-			photo_id = int(parts[2])
+			owner_id = int(parts[0][5:])
+			photo_id = int(parts[1])
 
 			keyboard.add_button(
-				f"Лайк фото {i + 1}",
+				f"❤️ Лайк фото {i + 1}",
 				color = VkKeyboardColor.POSITIVE,
 				payload = {
 					"command":"like_photo",
 					"owner_id":owner_id,
-					"photo_id":photo_id
+					"photo_id":photo_id,
+					"photo_index":i + 1
 				}
 			)
 			has_buttons = True
 
-			if i < len(photos) - 1 and i < 2:
+			if i < len(photos[:3]) - 1:
 				keyboard.add_line()
 
 		except (ValueError, IndexError) as e:
@@ -107,7 +109,7 @@ def create_city_selection_keyboard(cities):
 	return keyboard.get_keyboard()
 
 
-def write_msg(user_id, message, keyboard = None, attachment = None, retries = 3):
+def write_msg(user_id, message = None, keyboard = None, attachment = None, retries = 3):
 	for attempt in range(retries):
 		try:
 			vk.method("messages.send", {
@@ -229,27 +231,28 @@ def handle_find_person_with_params(user_id, params):
 			"last_command":"find_person",
 			"last_search_params":params
 		}
+		logging.info(f"Метод handle_find_person_with_params получил данные: age_from = {params['age_from']}, age_to = {params['age_to']}, sex = {params['sex']}, city = {params['city_id']}")
 		if users:
 			current_user = users[0]
 			profile_link = f"https://vk.com/id{current_user['id']}"
 			user_info = f"{current_user['first_name']} {current_user['last_name']}\nПрофиль: {profile_link}"
 
 			photos = user.get_user_photos(current_user["id"])
+			logging.info(f"Получены photos = {photos}")
 			keyboard = create_search_keyboard()
 
 			if photos:
-				clean_photos = [
-					f"photo{p1}_{p2}"
-					for photo in photos
-					if len((split_photo := photo.split('_', maxsplit = 2))) >= 3
-					for p1, p2, _ in [split_photo]  # Разбираем только первые 3 части
-				]
-				photo_keyboard = create_photo_like_keyboard(photos)
-				write_msg(user_id, user_info, keyboard = keyboard, attachment = ",".join(clean_photos[:3]))
-				if photo_keyboard:
-					write_msg(user_id, "Нажмите, чтобы лайкнуть фото:", keyboard = photo_keyboard)
-			else:
-				write_msg(user_id, f"{user_info}\n(нет фото)", keyboard = keyboard)
+				# Отправляем каждое фото с кнопкой отдельным сообщением
+				for i, photo in enumerate(photos[:3]):
+					logging.info(f"<UNK> photo = {photo}")
+					photo_keyboard = create_photo_like_keyboard([photo])  # Создаем клавиатуру для одного фото
+					write_msg(user_id, attachment = photo)
+					if photo_keyboard:
+						write_msg(user_id, f"Лайкнуть фото {i + 1}:", keyboard = photo_keyboard)
+
+				# Отправляем основную информацию и клавиатуру поиска
+				write_msg(user_id, user_info, keyboard = keyboard)
+
 		else:
 			write_msg(user_id, "😔 Никто не найден. Попробуйте снова!", create_main_keyboard())
 	except (ValueError, vk_api.exceptions.ApiError) as e:
@@ -262,23 +265,30 @@ def handle_find_person(user_id):
 
 
 def handle_next_person(user_id):
+	logging.info(f"Обработка запроса 'следующий человек' для пользователя {user_id}")
 	state = user_state.get(user_id, {})
-	if not state or state["last_command"] != "find_person" or not state["search_results"]:
-		write_msg(user_id, "Сначала выполните поиск!", create_main_keyboard())
-		return
+
+
 	state["current_index"] = (state["current_index"] + 1) % len(state["search_results"])
 	next_user_id = state["search_results"][state["current_index"]]
+
 	user_info = user.get_user_info(next_user_id)
 	photos = user.get_user_photos(next_user_id)
-	message = f"{user_info['first_name']} {user_info['last_name']}"
+
+	message = f"{user_info['first_name']} {user_info['last_name']}\nПрофиль: https://vk.com/id{next_user_id}"
 	keyboard = create_search_keyboard()
+
 	if photos:
-		photo_keyboard = create_photo_like_keyboard(photos)
-		write_msg(user_id, message, keyboard = keyboard, attachment = ",".join(photos))
-		if photo_keyboard:
-			write_msg(user_id, "Нажмите, чтобы лайкнуть фото:", keyboard = photo_keyboard)
-	else:
-		write_msg(user_id, f"{message} (нет фото)", keyboard = keyboard)
+		# Отправляем каждое фото с кнопкой отдельным сообщением
+		for i, photo in enumerate(photos[:3]):
+			photo_keyboard = create_photo_like_keyboard([photo])  # Создаем клавиатуру для одного фото
+			write_msg(user_id, attachment = photo)
+			if photo_keyboard:
+				write_msg(user_id, f"Лайкнуть фото {i + 1}:", keyboard = photo_keyboard)
+
+		# Отправляем основную информацию и клавиатуру поиска
+		write_msg(user_id, message, keyboard = keyboard)
+
 
 
 def handle_add_favorite(user_id):
@@ -390,7 +400,6 @@ def handle_list_favorites(user_id):
 while True:
 	try:
 		for event in longpoll.listen():
-			logging.debug(f"Получено событие (полные данные): {event}")
 			if event.type == VkEventType.MESSAGE_NEW:
 				logging.info(f"Новое входящее сообщение || ID пользователя: {event.user_id} || Текст: '{event.text}'")
 
@@ -398,14 +407,12 @@ while True:
 				user_id = event.user_id
 				text = event.text.lower().strip() if hasattr(event, 'text') else ""
 
-				logging.info(f"Получено сообщение от пользователя {user_id}: {text}")
+				# logging.info(f"Получено сообщение от пользователя {user_id}: {text}")
 				payload = event.extra_values.get("payload")
 				if payload:
 					try:
 						payload = json.loads(payload) if isinstance(payload, str) else payload
 
-						if text == 'привет':
-							write_msg(user_id, "Привет! Я бот для знакомств.", create_main_keyboard())
 						command = payload.get("command")
 						if command == "set_search_params":
 							handle_set_search_params(user_id)
@@ -446,7 +453,7 @@ while True:
 						continue
 
 				request = event.text.lower().strip() if hasattr(event, 'text') else ""
-				logging.info(f"Message from {user_id}: {request}")
+				logging.info(f"Получено сообщение от пользователя {user_id}: {text}")
 				if not request:
 					write_msg(user_id, "Пожалуйста, введите команду или используйте кнопки!", create_main_keyboard())
 					continue
@@ -455,8 +462,15 @@ while True:
 					continue
 
 				if request == "привет":
-					write_msg(user_id, "Привет! Я бот для знакомств. 🚀\nНажми «Найти человека», чтобы начать.",
-							  create_main_keyboard())
+					write_msg(user_id, "Привет! Я бот для знакомств. 🚀")
+					time.sleep(0.5)
+					if not USER_TOKEN:
+						write_msg(user_id, "Пожалуйста авторизуйтесь во ВКонтакте для продолжения работы бота")
+						USER_TOKEN = get_token_with_selenium()
+						if not USER_TOKEN:
+							continue
+						user = VKInteraction(USER_TOKEN, vk)
+						write_msg(user_id, "Активация прошла успешно!🚀\nНажми «Найти человека», чтобы начать.", create_main_keyboard())
 				elif request == "найти человека":
 					handle_set_search_params(user_id)
 				elif request == "добавить в избранное":
