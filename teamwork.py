@@ -13,12 +13,8 @@ from get_token import get_token_with_selenium
 from datetime import datetime
 
 # Настройка логирования для отладки и мониторинга
-logging.basicConfig(
-    level=logging.INFO,
-    filename="bot.log",
-    encoding="utf-8",
-    format="%(asctime)s - %(levelname)s - %(message)s"
-)
+logging.basicConfig(level = logging.INFO, filename = "bot.log", encoding = "utf-8",
+					format = "%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 # Загрузка переменных окружения
@@ -32,41 +28,42 @@ if not TOKEN:
     raise ValueError("VK_TOKEN не найден в переменных окружения")
 
 # Инициализация VK API и longpoll
-vk = vk_api.VkApi(token=TOKEN, api_version="5.199")
+vk = vk_api.VkApi(token = TOKEN, api_version = "5.199")
 longpoll = VkLongPoll(vk)
 user = None
 db = DataBase()
 user_state = {}
 
 
-def create_main_keyboard() -> str:
+def create_main_keyboard():
     """Создаёт основную клавиатуру с кнопками для поиска людей и просмотра избранных.
 
     Returns:
         str: JSON-представление клавиатуры VK.
     """
-    keyboard = VkKeyboard(one_time=False)
-    keyboard.add_button("Найти человека", color=VkKeyboardColor.POSITIVE, payload={"command": "set_search_params"})
-    keyboard.add_button("Список избранных", color=VkKeyboardColor.SECONDARY, payload={"command": "list_favorites"})
-    return keyboard.get_keyboard()
+	keyboard = VkKeyboard(one_time = False)
+	keyboard.add_button("Найти человека", color = VkKeyboardColor.POSITIVE, payload = {"command":"set_search_params"})
+	keyboard.add_button("Список избранных", color = VkKeyboardColor.SECONDARY, payload = {"command":"list_favorites"})
+	return keyboard.get_keyboard()
 
 
-def create_search_keyboard() -> str:
+def create_search_keyboard():
     """Создаёт клавиатуру для взаимодействия с результатами поиска, включая избранное, чёрный список и навигацию.
 
     Returns:
         str: JSON-представление клавиатуры VK.
     """
-    keyboard = VkKeyboard(one_time=False)
-    keyboard.add_button("Добавить в избранное", color=VkKeyboardColor.PRIMARY, payload={"command": "add_favorite"})
-    keyboard.add_button("Добавить в черный список", color=VkKeyboardColor.NEGATIVE, payload={"command": "add_blacklist"})
-    keyboard.add_line()
-    keyboard.add_button("Следующий", color=VkKeyboardColor.SECONDARY, payload={"command": "next_person"})
-    keyboard.add_button("Назад", color=VkKeyboardColor.SECONDARY, payload={"command": "back"})
-    return keyboard.get_keyboard()
+	keyboard = VkKeyboard(one_time = False)
+	keyboard.add_button("Добавить в избранное", color = VkKeyboardColor.PRIMARY, payload = {"command":"add_favorite"})
+	keyboard.add_button("Добавить в черный список", color = VkKeyboardColor.NEGATIVE,
+						payload = {"command":"add_blacklist"})
+	keyboard.add_line()
+	keyboard.add_button("Следующий", color = VkKeyboardColor.SECONDARY, payload = {"command":"next_person"})
+	keyboard.add_button("Назад", color = VkKeyboardColor.SECONDARY, payload = {"command":"back"})
+	return keyboard.get_keyboard()
 
 
-def create_photo_like_keyboard(photo: str) -> str | None:
+def create_photo_like_keyboard(photo):
     """Создаёт встроенную клавиатуру для лайка конкретного фото.
 
     Args:
@@ -101,18 +98,18 @@ def create_photo_like_keyboard(photo: str) -> str | None:
         return None
 
 
-def create_cancel_keyboard() -> str:
+def create_cancel_keyboard():
     """Создаёт клавиатуру с кнопкой отмены.
 
     Returns:
         str: JSON-представление клавиатуры VK.
     """
-    keyboard = VkKeyboard(one_time=True)
-    keyboard.add_button("Отмена", color=VkKeyboardColor.NEGATIVE, payload={"command": "cancel"})
-    return keyboard.get_keyboard()
+	keyboard = VkKeyboard(one_time = True)
+	keyboard.add_button("Отмена", color = VkKeyboardColor.NEGATIVE, payload = {"command":"cancel"})
+	return keyboard.get_keyboard()
 
 
-def create_city_selection_keyboard(cities: list) -> str:
+def create_city_selection_keyboard(cities):
     """Создаёт клавиатуру для выбора города из списка результатов поиска.
 
     Args:
@@ -121,17 +118,18 @@ def create_city_selection_keyboard(cities: list) -> str:
     Returns:
         str: JSON-представление клавиатуры VK.
     """
-    keyboard = VkKeyboard(one_time=True)
-    for i, city in enumerate(cities[:5]):
-        keyboard.add_button(city["title"], color=VkKeyboardColor.PRIMARY, payload={"command": "select_city", "city_id": city["id"]})
-        if i < len(cities) - 1 and i < 4:
-            keyboard.add_line()
-    keyboard.add_line()
-    keyboard.add_button("Отмена", color=VkKeyboardColor.NEGATIVE, payload={"command": "cancel"})
-    return keyboard.get_keyboard()
+	keyboard = VkKeyboard(one_time = True)
+	for i, city in enumerate(cities[:5]):
+		keyboard.add_button(city["title"], color = VkKeyboardColor.PRIMARY,
+							payload = {"command":"select_city", "city_id":city["id"]})
+		if i < len(cities) - 1 and i < 4:
+			keyboard.add_line()
+	keyboard.add_line()
+	keyboard.add_button("Отмена", color = VkKeyboardColor.NEGATIVE, payload = {"command":"cancel"})
+	return keyboard.get_keyboard()
 
 
-def write_msg(user_id: int, message: str = None, keyboard: str = None, attachment: str = None, retries: int = 3) -> None:
+def write_msg(user_id, message = None, keyboard = None, attachment = None, retries = 3):
     """Отправляет сообщение пользователю с логикой повторных попыток для обработки ограничений скорости.
 
     Args:
@@ -205,7 +203,7 @@ def handle_set_search_params(user_id: int) -> None:
     write_msg(user_id, "Введите минимальный возраст (например, 18):", create_cancel_keyboard())
 
 
-def handle_search_params_input(user_id: int, text: str) -> bool:
+def handle_search_params_input(user_id, text):
     """Обрабатывает ввод параметров поиска пользователем (возраст, пол, город).
 
     Args:
@@ -264,7 +262,7 @@ def handle_search_params_input(user_id: int, text: str) -> bool:
     return True
 
 
-def handle_find_person_with_params(user_id: int, params: dict) -> None:
+def handle_find_person_with_params(user_id, params):
     """Выполняет поиск пользователей на основе предоставленных параметров и отображает результаты.
 
     Args:
@@ -343,7 +341,7 @@ def handle_find_person_with_params(user_id: int, params: dict) -> None:
         write_msg(user_id, f"Ошибка поиска: {str(e)}. Попробуйте снова.", create_main_keyboard())
 
 
-def handle_find_person(user_id: int) -> None:
+def handle_find_person(user_id):
     """Инициирует процесс поиска человека, начиная с ввода параметров.
 
     Args:
@@ -352,7 +350,7 @@ def handle_find_person(user_id: int) -> None:
     handle_set_search_params(user_id)
 
 
-def handle_next_person(user_id: int) -> None:
+def handle_next_person(user_id):
     """Отображает следующего пользователя в результатах поиска.
 
     Args:
@@ -382,7 +380,7 @@ def handle_next_person(user_id: int) -> None:
         write_msg(user_id, message, keyboard=keyboard)
 
 
-def handle_add_favorite(user_id: int) -> None:
+def handle_add_favorite(user_id):
     """Добавляет текущего просматриваемого пользователя в список избранных.
 
     Args:
@@ -448,7 +446,7 @@ def handle_add_favorite(user_id: int) -> None:
     write_msg(user_id, "✅ Добавлено в избранное!", create_search_keyboard())
 
 
-def handle_add_blacklist(user_id: int) -> None:
+def handle_add_blacklist(user_id):
     """Добавляет текущего просматриваемого пользователя в чёрный список.
 
     Args:
@@ -471,7 +469,7 @@ def handle_add_blacklist(user_id: int) -> None:
     write_msg(user_id, "🚫 Добавлено в черный список!", create_search_keyboard())
 
 
-def handle_like_photo(user_id: int, owner_id: int, photo_id: int) -> None:
+def handle_like_photo(user_id, owner_id, photo_id):
     """Ставит лайк на фото текущего просматриваемого пользователя.
 
     Args:
@@ -496,7 +494,7 @@ def handle_like_photo(user_id: int, owner_id: int, photo_id: int) -> None:
         write_msg(user_id, "❌ Не удалось поставить лайк на фото.", create_search_keyboard())
 
 
-def handle_list_favorites(user_id: int) -> None:
+def handle_list_favorites(user_id):
     """Отображает список избранных пользователей для указанного пользователя.
 
     Args:
