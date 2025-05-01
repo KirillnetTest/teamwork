@@ -1,8 +1,6 @@
-from http.client import responses
 from time import sleep
 
 import vk_api
-from click import group
 from vk_api.exceptions import VkApiError
 from typing import Optional, List, Dict
 import logging
@@ -18,15 +16,15 @@ logger = logging.getLogger(__name__)
 
 class VKInteraction:
 
-	def __init__(self, user_token: str, VK: vk_api.VkApi,
+	def __init__(self, user_token: str, vk: vk_api.VkApi,
 				 api_version: str = "5.199") -> None:
 		"""
 		Инициализация взаимодействия с VK API
 		:param user_token: Токен пользователя (для методов, требующих права пользователя)
-		:param VK: Экзепляр VK_API"
+		:param vk: Экзепляр VK_API
 		"""
 		self.user_token = user_token
-		group_session = VK
+		group_session = vk
 		self.api_version = api_version
 
 		# инициализация сессии для использования методов использующих Токен Пользователя
@@ -79,7 +77,7 @@ class VKInteraction:
 			age_to: Optional[int] = None,
 			sex: Optional[int] = None,
 			city: Optional[int] = None,
-			count: int = 1000
+			count: Optional[int] = None
 	) -> List[Dict]:
 		"""
 		Поиск пользователей по заданным параметрам
@@ -89,7 +87,7 @@ class VKInteraction:
 		:param sex: Пол (1 - женский, 2 - мужской)
 		:param city: ID города
 		:param count: количество возвращаемых людей
-		:return: список людей подходящих под парамметры запроса
+		:return: список людей подходящих под парамметры запроса (возвращат Словарь содержащих поля
 		"""
 		result = []
 		logger.info(f'Начало поиска пользователей с параметрами: возраст от {age_from} до {age_to}, '
@@ -103,10 +101,11 @@ class VKInteraction:
 		params = {
 			'sort':0,
 			'count':count,
-			'fields':'sex, domain, bdate',
+			'fields':'first_name,last_name,city,sex,bdate',
 			'has_photo':1,
 			'status':1
 		}
+
 		try:
 			if age_from is not None:
 				params['age_from'] = age_from
@@ -138,10 +137,12 @@ class VKInteraction:
 				params['offset'] = len(result)
 
 				try:
+					logger.info(
+						f'Запрашиваем список людей соответсвующих парамметрам: age_from = {age_from}, age_to = {age_to}, sex = {sex}, city = {city}, count = {remaining}')
 					response = self.user_api.users.search(**params)
 					result.extend(response['items'])
 					remaining -= params['count']
-					logger.debug(f"Получено {len(response['items'])} пользователей в текущей выборке")
+					logger.info(f"Получено {len(response['items'])} пользователей в текущей выборке")
 
 					if len(response['items']) < params['count']:
 						logger.info(f"Получено меньше запрошенного ({len(response['items'])} < {params['count']}), "
@@ -171,7 +172,6 @@ class VKInteraction:
 		Возвращает указанное количество самых популярных фотографий (по лайкам) в формате Attachment.
 
 		:param user_id: ID пользователя VK
-		:param count: количество фотографий (по умолчанию 3)
 		:return Список Attachment фотографий или пустой список в случае ошибки
 		"""
 		logger.info(f"Получение фотографий пользователя с ID: {user_id}")
@@ -226,7 +226,8 @@ class VKInteraction:
 			response = self.user_api.likes.add(
 				type = 'photo',
 				owner_id = owner_id,
-				item_id = photo_id
+				item_id = photo_id,
+				access_token = self.user_token
 			)
 
 			# Проверяем, что лайк действительно был поставлен

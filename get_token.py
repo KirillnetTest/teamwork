@@ -1,20 +1,26 @@
 import time
 import pyautogui
+import logging
+import os
 
 from webdriver_manager.chrome import ChromeDriverManager
-from selenium.webdriver import Chrome, ChromeOptions, Keys
+from selenium.webdriver import Chrome, ChromeOptions
 from selenium.webdriver.chrome.service import Service
 
-user_token = None
+logging.basicConfig(level = logging.INFO, filename = "bot.log", encoding = "utf-8",
+					format = "%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
 
 # Параметры приложения VK
-CLIENT_ID = "52935184"
+CLIENT_ID = os.getenv("CLIENT_ID")
 REDIRECT_URI = "https://oauth.vk.com/blank.html"  # Сервер авторизации
 SCOPE = "photos,users,database,wall,likes"
 
-
 def get_token_with_selenium():
-	global user_token
+	"""
+	Авторизация пользователя во Вконтаке и получение Токена пользователя
+	:return: Токен пользователя Вконтакте
+	"""
 
 	chrome_path = ChromeDriverManager().install()
 	service = Service(executable_path = chrome_path)
@@ -32,6 +38,7 @@ def get_token_with_selenium():
 			f"response_type=token&"
 			f"v=5.199"
 		)
+		logger.info(f'Строка URL запроса: {auth_url} ')
 
 		# Устанавливаем окно в центр экрана
 		screen_width, screen_height = pyautogui.size()
@@ -49,8 +56,10 @@ def get_token_with_selenium():
 			time.sleep(1)
 
 		if "#access_token=" in browser.current_url:
+			logger.info(f'Строка URL содержащая Токен: {browser.current_url}')
 			token_part = browser.current_url.split("#access_token=")[1]
 			user_token = token_part.split("&")[0]
+			logger.info(f'Получен Токен: {user_token}')
 			return user_token
 		else:
 			return None
